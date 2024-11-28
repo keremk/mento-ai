@@ -19,6 +19,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(__dirname, '../.env.local');
 dotenv.config({ path: envPath });
 
+type Config = {
+  prompt: string;
+  voice?: string;
+};
+
 export default defineAgent({
   entry: async (ctx: JobContext) => {
     await ctx.connect();
@@ -26,9 +31,35 @@ export default defineAgent({
     const participant = await ctx.waitForParticipant();
     console.log(`starting assistant example agent for ${participant.identity}`);
 
-    const model = new openai.realtime.RealtimeModel({
-      instructions: 'You are a helpful assistant.',
-    });
+    // Get room metadata and parse instructions with safer parsing
+    console.log('Room metadata:', ctx.room.metadata);
+    let config: Config = { prompt: 'You are a helpful assistant.' }; // Default config
+    
+    try {
+      if (ctx.room.metadata) {
+        const roomMetadata = JSON.parse(ctx.room.metadata);
+        config = {
+          prompt: roomMetadata.config?.prompt || config.prompt,
+          voice: roomMetadata.config?.voice
+        };
+      }
+    } catch (e) {
+      console.error('Failed to parse room metadata:', e);
+    }
+    
+    console.log('Config:', config);
+
+    // Create model with more careful configuration
+    const modelConfig: ConstructorParameters<typeof openai.realtime.RealtimeModel>[0] = {
+      instructions: config.prompt,
+    };
+
+    // Only add voice if it's specified
+    if (config.voice) {
+      modelConfig.voice = config.voice;
+    }
+
+    const model = new openai.realtime.RealtimeModel(modelConfig);
 
     const fncCtx: llm.FunctionContext = {
       weather: {
